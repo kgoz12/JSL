@@ -1,0 +1,74 @@
+---
+title: "Error Saving Pipeline Containing DrugNormalizer()"
+date: "4/21/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+pacman::p_load("dplyr",
+               "purrr",
+               "tidyr",
+               "sparklyr",
+               "sparklyr.nested",
+               "sparknlp",
+               "glue")
+
+Home <- "/home/katieg/"
+
+```
+
+# Spark Connect
+
+```{r}
+config <- spark_config()
+config$sparklyr.log.console <- FALSE
+config$spark.sql.shuffle.partitions <- 800
+sc <- spark_connect(master = "local", config = config, version = "3.0.1")
+```
+
+# Empty Dataframe
+
+```{r}
+empty_df <- data.frame(matrix(ncol = 1, nrow = 0))
+colnames(empty_df) <- c("text_cleaner")
+empty_spark_df <- sparklyr::sdf_copy_to(sc, empty_df, "empty_spark_df", memory = TRUE, overwrite = TRUE)
+```
+
+# Pipeline
+
+```{r}
+document_assembler <- 
+  sparknlp::nlp_document_assembler(
+    sc, 
+    input_col = "text_cleaner", 
+    output_col = "document")
+
+drug_normalizer <- 
+  sparknlp::nlp_drug_normalizer(
+    sc,
+    input_cols = "document",
+    output_col = "document_normalized",
+    policy = "all") 
+
+entity_pipeline <-
+  sparklyr::ml_pipeline(
+    document_assembler,
+    drug_normalizer)
+
+entity_detection_pipeline <- 
+  sparklyr::ml_fit(entity_pipeline, empty_spark_df)
+
+```
+
+# Save
+
+```{r error = TRUE}
+
+sparklyr::ml_save(entity_detection_pipeline, 
+                  glue("{Home}/drug-norm-pipeline"),
+                  overwrite = TRUE)
+
+```
+
